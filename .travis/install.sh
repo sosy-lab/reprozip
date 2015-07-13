@@ -25,8 +25,10 @@ in
             /tmp/rpz2.7/bin/pip install 'git+https://github.com/remram44/usagestats.git#egg=usagestats'
             /tmp/rpz2.7/bin/pip install ./reprozip
         fi
+        PKGS="libc6-dev-i386 gcc-multilib"
+        if [ "$TEST_MODE" = "coverage" ]; then PKGS="$PKGS lcov"; fi
         sudo apt-get update -qq
-        sudo apt-get install -qq libc6-dev-i386 gcc-multilib
+        sudo apt-get install -qq $PKGS
         pip install 'git+https://github.com/remram44/rpaths.git#egg=rpaths'
         pip install 'git+https://github.com/remram44/usagestats.git#egg=usagestats'
         if [ $TRAVIS_PYTHON_VERSION = "2.6" ]; then pip install unittest2; fi

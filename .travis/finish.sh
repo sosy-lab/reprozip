@@ -12,8 +12,9 @@ in
         # C
         # Find the coverage file (in distutils's build directory)
         OBJDIR=$(dirname "$(find . -name pytracer.gcno | head -n 1)")
-        (cd reprozip/native && gcov -o ../../$OBJDIR *.c)
+        (cd reprozip/native && lcov --directory ../../$OBJDIR -c -o reprozip.lcov)
 
-        curl -s -o - https://codecov.io/bash | bash -
+        curl -s -o ~/codecov https://codecov.io/bash
+        bash ~/codecov -X gcov
         ;;
 esac
