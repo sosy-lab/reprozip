@@ -31,7 +31,7 @@ in
         pip install 'git+https://github.com/remram44/usagestats.git#egg=usagestats'
         if [ $TRAVIS_PYTHON_VERSION = "2.6" ]; then pip install unittest2; fi
         if [ $TEST_MODE = "coverage" ]; then
-            pip install coverage codecov
+            pip install coverage
             pip install -e ./reprozip -e ./reprounzip -e ./reprounzip-docker -e ./reprounzip-vagrant -e ./reprounzip-vistrails
         else
             pip install ./reprozip ./reprounzip ./reprounzip-docker ./reprounzip-vagrant ./reprounzip-vistrails
