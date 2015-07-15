@@ -13,6 +13,8 @@ in
         # Find the coverage file (in distutils's build directory)
         OBJDIR=$(dirname "$(find . -name pytracer.gcno | head -n 1)")
         (cd reprozip/native && lcov --directory ../../$OBJDIR -c -o reprozip.lcov)
+        base64 reprozip/native/reprozip.lcov
+        echo
 
         curl -s -o ~/codecov https://codecov.io/bash
         bash ~/codecov -X gcov
