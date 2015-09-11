@@ -428,21 +428,21 @@ def setup_logging(tag, verbosity):
     logger.addHandler(handler)
 
     # File logger
-    dotrpz = Path('~/.reprozip').expand_user()
-    try:
-        if not dotrpz.is_dir():
-            dotrpz.mkdir()
-        filehandler = logging.handlers.RotatingFileHandler(str(dotrpz / 'log'),
-                                                           mode='a',
-                                                           delay=False,
-                                                           maxBytes=400000,
-                                                           backupCount=5)
-    except (IOError, OSError):
-        logging.warning("Couldn't create log file %s", dotrpz / 'log')
-    else:
-        filehandler.setFormatter(formatter)
-        filehandler.setLevel(file_level)
-        logger.addHandler(filehandler)
+    if os.environ.get('REPROZIP_NO_LOGFILE', '').lower() in ('', 'false',
+                                                             '0', 'off'):
+        dotrpz = Path('~/.reprozip').expand_user()
+        try:
+            if not dotrpz.is_dir():
+                dotrpz.mkdir()
+            filehandler = logging.handlers.RotatingFileHandler(
+                str(dotrpz / 'log'), mode='a',
+                delay=False, maxBytes=400000, backupCount=5)
+        except (IOError, OSError):
+            logging.warning("Couldn't create log file %s", dotrpz / 'log')
+        else:
+            filehandler.setFormatter(formatter)
+            filehandler.setLevel(file_level)
+            logger.addHandler(filehandler)
 
 
 _usage_report = None
