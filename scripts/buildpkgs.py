@@ -13,10 +13,16 @@ re_setup = re.compile(r'setup\(')
 re_version = re.compile(r'(?<=\bversion=[\'"])([0-9a-zA-Z._+-]+)')
 
 
+version_mode = None
+
+
 def update_version(gitversion, foundversion):
     """Chooses version string to write to setup.py.
     """
-    return gitversion
+    if version_mode == 'setuppy':
+        return foundversion
+    else:
+        return gitversion
 
 
 def make_pkg():
@@ -75,4 +81,13 @@ def make_pkg():
 
 
 if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        sys.stderr.write("Usage: buildpkgs.py (release|nightly)\n")
+        sys.exit(1)
+
+    if sys.argv[1] == 'release':
+        version_mode = 'setuppy'
+    elif sys.argv[1] == 'nightly':
+        version_mode = 'git'
+
     make_pkg()
