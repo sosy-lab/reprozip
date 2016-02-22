@@ -1,0 +1,88 @@
+Source: reprozip
+Maintainer: Remi Rampin <remirampin@gmail.com>
+Homepage: https://vida-nyu.github.io/reprozip/
+Section: misc
+Priority: optional
+X-Python-Version: >= 2.7.3
+Build-Depends: debhelper (>= 9), dh-python, python-all, python-setuptools
+
+Package: reprozip
+Architecture: i386 amd64
+Depends: ${python:Depends}, ${misc:Depends}, python-rpaths (>= 0.8)
+Recommends: reprounzip
+Description: reproducible experiment packer
+ ReproZip is a tool aimed at simplifying the process of creating reproducible
+ experiments from command-line executions, a frequently-used common denominator
+ in computational science. It tracks operating system calls and creates a
+ package that contains all the binaries, files and dependencies required to run
+ a given command on the author's computational environment (packing step). A
+ reviewer can then extract the experiment in his environment to reproduce the
+ results (unpacking step).
+ .
+ This package contains the reprozip program, responsible for the packing step.
+
+Package: reprounzip
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}, python-rpaths (>= 0.8)
+Suggests: reprozip
+Description: reproducible experiment unpacker
+ ReproZip is a tool aimed at simplifying the process of creating reproducible
+ experiments from command-line executions, a frequently-used common denominator
+ in computational science. It tracks operating system calls and creates a
+ package that contains all the binaries, files and dependencies required to run
+ a given command on the author's computational environment (packing step). A
+ reviewer can then extract the experiment in his environment to reproduce the
+ results (unpacking step).
+ .
+ This package contains the reprounzip program, used to unpack experiments.
+
+Package: reprounzip-docker
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}, reprounzip (>= 1.0.0),
+         python-rpaths (>= 0.8)
+Suggests: docker.io
+Description: reproducible experiment unpacker
+ ReproZip is a tool aimed at simplifying the process of creating reproducible
+ experiments from command-line executions, a frequently-used common denominator
+ in computational science. It tracks operating system calls and creates a
+ package that contains all the binaries, files and dependencies required to run
+ a given command on the author's computational environment (packing step). A
+ reviewer can then extract the experiment in his environment to reproduce the
+ results (unpacking step).
+ .
+ This package contains the Docker unpacker, reproducing experiments in Docker
+ containers.
+
+Package: reprounzip-vagrant
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}, reprounzip (>= 1.0.0),
+         python-rpaths (>= 0.8)
+Recommends: vagrant
+Description: reproducible experiment unpacker
+ ReproZip is a tool aimed at simplifying the process of creating reproducible
+ experiments from command-line executions, a frequently-used common denominator
+ in computational science. It tracks operating system calls and creates a
+ package that contains all the binaries, files and dependencies required to run
+ a given command on the author's computational environment (packing step). A
+ reviewer can then extract the experiment in his environment to reproduce the
+ results (unpacking step).
+ .
+ This package contains the Vagrant unpacker, reproducing experiments in virtual
+ machines.
+
+Package: reprounzip-vistrails
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}, reprounzip (>= 1.0.0),
+         python-rpaths (>= 0.8)
+Suggests: vistrails
+Description: reproducible experiment unpacker
+ ReproZip is a tool aimed at simplifying the process of creating reproducible
+ experiments from command-line executions, a frequently-used common denominator
+ in computational science. It tracks operating system calls and creates a
+ package that contains all the binaries, files and dependencies required to run
+ a given command on the author's computational environment (packing step). A
+ reviewer can then extract the experiment in his environment to reproduce the
+ results (unpacking step).
+ .
+ This package contains the plugin integrating reprounzip with the VisTrails
+ workflow management system.
