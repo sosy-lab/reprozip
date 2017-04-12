@@ -506,7 +506,11 @@ def docker_run(args):
     # Get exit status from "docker inspect"
     out = subprocess.check_output(args.docker_cmd.split() +
                                   ['inspect', container])
-    outjson = json.loads(out.decode('ascii'))
+    try:
+        outjson = json.loads(out.decode('ascii'))
+    except UnicodeDecodeError:
+        logging.critical("DOCKER INSPECT JSON IS NOT ASCII:\n%r", out)
+        raise
     if (outjson[0]["State"]["Running"] is not False or
             outjson[0]["State"]["Paused"] is not False):
         logging.error("Invalid container state after execution:\n%s",
