@@ -34,8 +34,8 @@ import signal
 import socket
 import struct
 
-import libc
-import util
+from reprounzip.unpackers.containerexec import libc
+from reprounzip.unpackers.containerexec import util
 
 __all__ = [
     'execute_in_namespace',

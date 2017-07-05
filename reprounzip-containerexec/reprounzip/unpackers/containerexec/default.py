@@ -10,8 +10,6 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import argparse
 from reprounzip.unpackers.common import target_must_exist, add_environment_options
 
-__version__ = '0.1'
-
 
 def containerexec_create(args):
     """Unpacks the experiment in a folder.
@@ -54,8 +52,7 @@ def containerexec_destroy(args):
 
 
 def setup(parser, **kwargs):
-    """Unpacks the files in a directory and runs the experiment in an isolated
-    environment created by Containerexecutor
+    """Unpacks the files in a directory and runs the experiment in an isolated environment
 
     setup           creates the directory (needs the pack filename)
     upload          replaces input files in the directory

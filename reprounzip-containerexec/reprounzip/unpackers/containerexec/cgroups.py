@@ -28,7 +28,7 @@ import signal
 import tempfile
 import time
 
-import util
+from reprounzip.unpackers.containerexec import util
 
 __all__ = [
            'find_my_cgroups',

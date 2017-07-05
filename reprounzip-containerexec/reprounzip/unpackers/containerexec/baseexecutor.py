@@ -30,7 +30,7 @@ import sys
 import threading
 sys.dont_write_bytecode = True # prevent creation of .pyc files
 
-from __init__ import __version__
+from reprounzip.unpackers.containerexec import __version__
 
 
 def add_basic_executor_options(argument_parser):

@@ -38,12 +38,12 @@ import sys
 import tempfile
 sys.dont_write_bytecode = True # prevent creation of .pyc files
 
-from __init__ import __version__
-import baseexecutor
-from cgroups import Cgroup
-import container
-import libc
-import util
+from reprounzip.unpackers.containerexec import baseexecutor
+from reprounzip.unpackers.containerexec import BenchExecException
+from reprounzip.unpackers.containerexec.cgroups import Cgroup
+from reprounzip.unpackers.containerexec import container
+from reprounzip.unpackers.containerexec import libc
+from reprounzip.unpackers.containerexec import util
 
 DIR_HIDDEN = "hidden"
 DIR_READ_ONLY = "read-only"
