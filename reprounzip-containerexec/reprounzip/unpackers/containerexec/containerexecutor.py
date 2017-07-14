@@ -38,12 +38,9 @@ import sys
 import tempfile
 sys.dont_write_bytecode = True # prevent creation of .pyc files
 
-from reprounzip.unpackers.containerexec import baseexecutor
-from reprounzip.unpackers.containerexec import BenchExecException
+from reprounzip.unpackers.containerexec import baseexecutor, \
+    BenchExecException, container, libc, util
 from reprounzip.unpackers.containerexec.cgroups import Cgroup
-from reprounzip.unpackers.containerexec import container
-from reprounzip.unpackers.containerexec import libc
-from reprounzip.unpackers.containerexec import util
 
 DIR_HIDDEN = "hidden"
 DIR_READ_ONLY = "read-only"
@@ -474,7 +471,8 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                                         stdout=stdout, stderr=stderr,
                                         env=env,
                                         close_fds=False,
-                                        preexec_fn=grandchild)
+                                        preexec_fn=grandchild,
+                                        shell=True)
                 except (EnvironmentError, RuntimeError) as e:
                     logging.critical("Cannot start process: %s", e)
                     return CHILD_OSERROR
@@ -779,8 +777,8 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             os.makedirs(temp_base + temp_dir)
             container.make_bind_mount(temp_base + temp_dir, mount_base + temp_dir)
 
-        os.chroot(mount_base)
 
+        os.chroot(mount_base)
 
     def _transfer_output_files(self, temp_dir, working_dir, output_dir, patterns):
         """Transfer files created by the tool in the container to the output directory.
