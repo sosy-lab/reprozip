@@ -105,7 +105,7 @@ def containerexec_run(args):
     # actual run execution
     try:
         signals.pre_run(target=target)
-        result = executor.execute_run(cmds, workingDir=target,
+        result = executor.execute_run(cmds, workingDir=str(target / "root"),
                                       setup_reprounzip=CONFIGURE_REPROUNZIP_CONTAINER)
         stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
         signals.post_run(target=target, retcode=result.value)

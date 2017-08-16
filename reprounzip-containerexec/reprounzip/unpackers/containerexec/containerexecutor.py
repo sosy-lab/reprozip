@@ -44,7 +44,6 @@ from reprounzip.unpackers.common import shell_escape
 from reprounzip.unpackers.containerexec import baseexecutor, \
     BenchExecException, container, libc, util
 from reprounzip.unpackers.containerexec.cgroups import Cgroup
-from reprounzip.utils import unicode_, join_root
 
 DIR_HIDDEN = "hidden"
 DIR_READ_ONLY = "read-only"
@@ -420,14 +419,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         # If the current directory is within one of the bind mounts we create,
         # we need to cd into this directory again, otherwise we would not see the bind mount,
         # but the directory behind it. Thus we always set cwd to force a change of directory.
-        if not setup_reprounzip:
-            cwd = os.path.abspath(cwd or os.curdir)
-        else:
-            if type(cwd) is not Path:
-                pass  # TODO
-        #    logging.info('Configuring container for reprounzip execution')
-            path = Path(cwd)
-            cwd = str(path.resolve())
+        cwd = os.path.abspath(cwd or os.curdir)
 
         logging.info('cwd: %s', cwd)
 
@@ -442,9 +434,6 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                 # via a socket (but Python < 3.3 lacks a convenient API for sendmsg),
                 # and reading /proc/self in the outer procfs instance (that's what we do).
                 my_outer_pid = container.get_my_pid_from_procfs()
-
-                #os.chroot(b"root/")
-                #os.chdir(b"root/")
 
                 container.mount_proc()
                 container.drop_capabilities()
@@ -486,7 +475,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                         container.activate_network_interface("lo")
 
                     if setup_reprounzip:
-                        self._setup_reprozip_filesystem(path)
+                        self._setup_reprozip_filesystem(cwd)
                     else:
                         #proc_dir = path / b"root/proc"
                         #proc_dir.mkdir(parents=True)
@@ -496,9 +485,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                     return CHILD_OSERROR
 
                 try:
-                    root_dir = os.path.join(cwd, b"root/")
-                    #os.chdir(cwd)
-                    os.chdir(root_dir)
+                    os.chdir(cwd)
                 except EnvironmentError as e:
                     logging.critical(
                         "Cannot change into working directory inside container: %s", e)
@@ -822,19 +809,17 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         os.chroot(mount_base)
 
 
-    def _setup_reprozip_filesystem(self, target):
-        root_dir = target / b"root"
-        root_dir = str(root_dir.resolve())
+    def _setup_reprozip_filesystem(self, root_dir):
+        root_dir = root_dir.encode()
 
         # Create an empty proc folder into the root dir. The mounting will be done later
         # in the corresponding grandchild-proc.
-        proc_dir = target / b"root/proc"
-        proc_dir.mkdir(parents=True)
+        proc_dir = os.path.join(root_dir, b"proc")
+        os.makedirs(proc_dir, exist_ok=True)
 
         # Bind /dev from host
-        dev_base = target / b"root/dev"
-        dev_base.mkdir(parents=True)
-        dev_base = str(dev_base.resolve())
+        dev_base = os.path.join(root_dir, b"dev")
+        os.makedirs(dev_base, exist_ok=True)
 
         container.make_bind_mount(b"/dev/", dev_base, recursive=True, private=True)
 
