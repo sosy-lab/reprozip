@@ -443,8 +443,8 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                 # and reading /proc/self in the outer procfs instance (that's what we do).
                 my_outer_pid = container.get_my_pid_from_procfs()
 
-                os.chroot(b"root/")
-                os.chdir(b"root/")
+                #os.chroot(b"root/")
+                #os.chdir(b"root/")
 
                 container.mount_proc()
                 container.drop_capabilities()
@@ -496,8 +496,9 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                     return CHILD_OSERROR
 
                 try:
-                    os.chdir(cwd)
-                    #os.chdir(b"/")
+                    root_dir = os.path.join(cwd, b"root/")
+                    #os.chdir(cwd)
+                    os.chdir(root_dir)
                 except EnvironmentError as e:
                     logging.critical(
                         "Cannot change into working directory inside container: %s", e)
