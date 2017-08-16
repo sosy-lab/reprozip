@@ -2,13 +2,14 @@
 # This file is part of ReproZip which is released under the Revised BSD License
 # See file LICENSE for full license details.
 
-"""Contexec plugin for reprounzip."""
+"""Containerexec plugin for reprounzip."""
 
 # prepare for Python 3
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import argparse
 import logging
+import os
 import signal
 import socket
 from rpaths import Path
@@ -20,14 +21,14 @@ from reprounzip.unpackers.common import target_must_exist, shell_escape, \
     get_runs, add_environment_options, fixup_environment, metadata_read, \
     metadata_write, metadata_update_run
 from reprounzip.unpackers.common.x11 import X11Handler, LocalForwarder
-from reprounzip.unpackers.default import chroot_create, chroot_destroy, \
-    chroot_destroy_unmount, chroot_destroy_dir, chroot_mount, chroot_setup, \
+from reprounzip.unpackers.default import chroot_create, chroot_destroy_dir, \
     test_linux_same_arch
 from reprounzip.unpackers.containerexec import baseexecutor, BenchExecException, \
     containerexecutor
 from reprounzip.unpackers.containerexec import util as containerexec_util
-from reprounzip.utils import iteritems, stderr
+from reprounzip.utils import unicode_, iteritems, stderr
 
+CONFIGURE_REPROUNZIP_CONTAINER = True
 
 @target_must_exist
 def containerexec_upload(args):
@@ -42,6 +43,8 @@ def containerexec_run(args):
     """
     if args is None:
         args = sys.args
+
+    #logging.info('Received arguments: %s', args)
 
     target = Path(args.target[0])
     unpacked_info = metadata_read(target, 'chroot')
@@ -58,8 +61,12 @@ def containerexec_run(args):
                      args.x11_display)
 
     cmds = []
+    uid = 0
+    gid = 0
     for run_number in selected_runs:
         run = runs[run_number]
+        #cmd = 'cd %s; ' % (shell_escape(run['workingdir']))
+        #workingDir = shell_escape(run['workingdir'])
         cmd = 'cd %s && ' % shell_escape(run['workingdir'])
         cmd += '/usr/bin/env -i '
         environ = x11.fix_env(run['environ'])
@@ -67,6 +74,8 @@ def containerexec_run(args):
         cmd += ' '.join('%s=%s' % (shell_escape(k), shell_escape(v))
                         for k, v in iteritems(environ))
         cmd += ' '
+        uid = run['uid']
+        gid = run['gid']
         # FIXME : Use exec -a or something if binary != argv[0]
         if cmdline is None:
             argv = [run['binary']] + run['argv'][1:]
@@ -80,13 +89,12 @@ def containerexec_run(args):
     cmds = ' && '.join(cmds)
 
     # Starts forwarding
-    forwarders = []
-    for portnum, connector in x11.port_forward:
-        fwd = LocalForwarder(connector, portnum)
-        forwarders.append(fwd)
+#    forwarders = []
+#    for portnum, connector in x11.port_forward:
+#        fwd = LocalForwarder(connector, portnum)
+#        forwarders.append(fwd)
 
-    workingDir = str(target.resolve())
-    executor = containerexecutor.ContainerExecutor()
+    executor = containerexecutor.ContainerExecutor(uid=uid, gid=gid)
 
     # ensure that process gets killed on interrupt/kill signal
     def signal_handler_kill(signum, frame):
@@ -97,16 +105,18 @@ def containerexec_run(args):
     # actual run execution
     try:
         signals.pre_run(target=target)
-        result = executor.execute_run(cmds, workingDir=workingDir)
+        result = executor.execute_run(cmds, workingDir=target,
+                                      setup_reprounzip=CONFIGURE_REPROUNZIP_CONTAINER)
+        stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
         signals.post_run(target=target, retcode=result.value)
+
+        # Update input file status
+        metadata_update_run(config, unpacked_info, selected_runs)
+        metadata_write(target, unpacked_info, 'chroot')
+
     except (BenchExecException, OSError) as e:
-        sys.exit("Cannot execute {0}: {1}.".format(containerexec_util.escape_string_shell(args[0]), e))
-
-    # Update input file status
-    metadata_update_run(config, unpacked_info, selected_runs)
-    metadata_write(target, unpacked_info, 'chroot')
-
-    stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
+        sys.exit("Cannot execute process: {0}.".format(e))
+        # sys.exit("Cannot execute {0}: {1}.".format(containerexec_util.escape_string_shell(args[0]), e))
 
     return result.signal or result.value
 
@@ -131,10 +141,10 @@ def setup(parser, **kwargs):
 
     For example:
 
-        $ reprounzip containerexec setup mypackage.rpz somepath
-        $ reprounzip containerexec run somepath/
-        $ reprounzip containerexec download somepath/ results:/home/user/results.txt
-        $ reprounzip containerexec destroy somepath
+        $ reprounzip containerexec setup mypackage.rpz path
+        $ reprounzip containerexec run path/
+        $ reprounzip containerexec download path/ results:/home/user/results.txt
+        $ reprounzip containerexec destroy path
 
     Upload specifications are either:
       :input_id             restores the original input file from the pack
@@ -146,6 +156,7 @@ def setup(parser, **kwargs):
       output_id:filename    extracts the output file to the corresponding local
                             path
     """
+
     subparsers = parser.add_subparsers(title="actions",
                                        metavar='', help=argparse.SUPPRESS)
 
@@ -165,31 +176,12 @@ def setup(parser, **kwargs):
                           help="Don't restore files' owner/group when "
                                "extracting, use current users")
 
-    parser_setup_create = subparsers.add_parser('setup/create')
-    add_opt_setup(parser_setup_create)
-    add_opt_general(parser_setup_create)
-    add_opt_owner(parser_setup_create)
-    parser_setup_create.set_defaults(func=chroot_create)
-
-    # setup/mount
-    parser_setup_mount = subparsers.add_parser('setup/mount')
-    add_opt_general(parser_setup_mount)
-    parser_setup_mount.set_defaults(func=chroot_mount)
-
     # setup
     parser_setup = subparsers.add_parser('setup')
     add_opt_setup(parser_setup)
     add_opt_general(parser_setup)
     add_opt_owner(parser_setup)
-    parser_setup.add_argument(
-        '--bind-magic-dirs', action='store_true',
-        dest='bind_magic_dirs', default=None,
-        help="Mount /dev and /proc inside the chroot")
-    parser_setup.add_argument(
-        '--dont-bind-magic-dirs', action='store_false',
-        dest='bind_magic_dirs', default=None,
-        help="Don't mount /dev and /proc inside the chroot")
-    parser_setup.set_defaults(func=chroot_setup)
+    parser_setup.set_defaults(func=chroot_create)
 
     # upload
     parser_upload = subparsers.add_parser('upload')
@@ -225,19 +217,9 @@ def setup(parser, **kwargs):
                                       "current directory")
     parser_download.set_defaults(func=containerexec_download)
 
-    # destroy/unmount
-    parser_destroy_unmount = subparsers.add_parser('destroy/unmount')
-    add_opt_general(parser_destroy_unmount)
-    parser_destroy_unmount.set_defaults(func=chroot_destroy_unmount)
-
-    # destroy/dir
-    parser_destroy_dir = subparsers.add_parser('destroy/dir')
-    add_opt_general(parser_destroy_dir)
-    parser_destroy_dir.set_defaults(func=chroot_destroy_dir)
-
     # destroy
     parser_destroy = subparsers.add_parser('destroy')
     add_opt_general(parser_destroy)
-    parser_destroy.set_defaults(func=chroot_destroy)
+    parser_destroy.set_defaults(func=chroot_destroy_dir)
 
     return {'test_compatibility': test_linux_same_arch}

@@ -26,6 +26,8 @@ import errno
 import logging
 import os
 import collections
+import re
+from rpaths import Path
 import shutil
 try:
     import cPickle as pickle
@@ -38,9 +40,11 @@ import sys
 import tempfile
 sys.dont_write_bytecode = True # prevent creation of .pyc files
 
+from reprounzip.unpackers.common import shell_escape
 from reprounzip.unpackers.containerexec import baseexecutor, \
     BenchExecException, container, libc, util
 from reprounzip.unpackers.containerexec.cgroups import Cgroup
+from reprounzip.utils import unicode_, join_root
 
 DIR_HIDDEN = "hidden"
 DIR_READ_ONLY = "read-only"
@@ -288,7 +292,8 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
 
     # --- run execution ---
 
-    def execute_run(self, args, workingDir=None, output_dir=None, result_files_patterns=[]):
+    def execute_run(self, args, workingDir=None, output_dir=None, result_files_patterns=[],
+                    setup_reprounzip=False):
         """
         This method executes the command line and waits for the termination of it,
         handling all setup and cleanup.
@@ -298,7 +303,9 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         @param result_files_patterns: a list of patterns of files to retrieve as result files
         """
         # preparations
-        temp_dir = tempfile.mkdtemp(prefix="BenchExec_run_")
+        temp_dir = ''
+        if not setup_reprounzip:
+            temp_dir = tempfile.mkdtemp(prefix="Benchexec_run_")
 
         pid = None
         returnvalue = 0
@@ -308,9 +315,10 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         try:
             pid, result_fn = self._start_execution(args=args,
                 stdin=None, stdout=None, stderr=None,
-                env=os.environ.copy(), cwd=workingDir, temp_dir=temp_dir,
+                env=os.environ.copy(), cwd=workingDir, path=None, temp_dir=temp_dir,
                 cgroups=Cgroup({}),
                 output_dir=output_dir, result_files_patterns=result_files_patterns,
+                setup_reprounzip=setup_reprounzip,
                 child_setup_fn=lambda: None,
                 parent_setup_fn=lambda: None,
                 parent_cleanup_fn=id)
@@ -327,13 +335,23 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             with self.SUB_PROCESS_PIDS_LOCK:
                 self.SUB_PROCESS_PIDS.discard(pid)
 
-            logging.debug('Cleaning up temporary directory.')
-            util.rmtree(temp_dir, onerror=util.log_rmtree_error)
+            if not setup_reprounzip:
+                logging.debug('Cleaning up temporary directory.')
+                util.rmtree(temp_dir, onerror=util.log_rmtree_error)
+
+            if setup_reprounzip and type(workingDir) is Path:
+                dirs = [b"root/proc", b"root/dev"]
+                for dir in dirs:
+                    dir = workingDir / dir
+                    if dir.exists():
+                        logging.info('removing dir: %s', dir)
+                        util.rmtree(str(dir.resolve()), onerror=util.log_rmtree_error)
 
         # cleanup steps that are only relevant in case of success
         return util.ProcessExitCode.from_raw(returnvalue)
 
-    def _start_execution(self, output_dir=None, result_files_patterns=[], *args, **kwargs):
+    def _start_execution(self, output_dir=None, result_files_patterns=[], setup_reprounzip=False,
+                         *args, **kwargs):
         if not self._use_namespaces:
             return super(ContainerExecutor, self)._start_execution(*args, **kwargs)
         else:
@@ -351,14 +369,15 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                                          .format(pattern))
 
             return self._start_execution_in_container(
-                output_dir=output_dir, result_files_patterns=result_files_patterns, *args, **kwargs)
+                output_dir=output_dir, result_files_patterns=result_files_patterns,
+                setup_reprounzip=setup_reprounzip, *args, **kwargs)
 
 
     # --- container implementation with namespaces ---
 
     def _start_execution_in_container(
-            self, args, stdin, stdout, stderr, env, cwd, temp_dir, cgroups,
-            output_dir, result_files_patterns,
+            self, args, stdin, stdout, stderr, env, cwd, path, temp_dir, cgroups,
+            output_dir, result_files_patterns, setup_reprounzip,
             parent_setup_fn, child_setup_fn, parent_cleanup_fn):
         """Execute the given command and measure its resource usage similarly to super()._start_execution(),
         but inside a container implemented using Linux namespaces.
@@ -401,7 +420,16 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         # If the current directory is within one of the bind mounts we create,
         # we need to cd into this directory again, otherwise we would not see the bind mount,
         # but the directory behind it. Thus we always set cwd to force a change of directory.
-        cwd = os.path.abspath(cwd or os.curdir)
+        if not setup_reprounzip:
+            cwd = os.path.abspath(cwd or os.curdir)
+        else:
+            if type(cwd) is not Path:
+                pass  # TODO
+        #    logging.info('Configuring container for reprounzip execution')
+            path = Path(cwd)
+            cwd = str(path.resolve())
+
+        logging.info('cwd: %s', cwd)
 
         def grandchild():
             """Setup everything inside the process that finally exec()s the tool."""
@@ -414,6 +442,9 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                 # via a socket (but Python < 3.3 lacks a convenient API for sendmsg),
                 # and reading /proc/self in the outer procfs instance (that's what we do).
                 my_outer_pid = container.get_my_pid_from_procfs()
+
+                os.chroot(b"root/")
+                os.chdir(b"root/")
 
                 container.mount_proc()
                 container.drop_capabilities()
@@ -453,13 +484,20 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                 try:
                     if not self._allow_network:
                         container.activate_network_interface("lo")
-                    self._setup_container_filesystem(temp_dir)
+
+                    if setup_reprounzip:
+                        self._setup_reprozip_filesystem(path)
+                    else:
+                        #proc_dir = path / b"root/proc"
+                        #proc_dir.mkdir(parents=True)
+                        self._setup_container_filesystem(temp_dir)
                 except EnvironmentError as e:
                     logging.critical("Failed to configure container: %s", e)
                     return CHILD_OSERROR
 
                 try:
                     os.chdir(cwd)
+                    #os.chdir(b"/")
                 except EnvironmentError as e:
                     logging.critical(
                         "Cannot change into working directory inside container: %s", e)
@@ -600,10 +638,10 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         Then we chroot into the new mount hierarchy.
 
         The new filesystem layout still has a view of the host's /proc.
-        We do not mount a fresh /proc here because the grandchild still needs old the /proc.
+        We do not mount a fresh /proc here because the grandchild still needs the old /proc.
 
         We do simply iterate over all existing mount points and set them to read-only/overlay them,
-        because it is easier create a new hierarchy and chroot into it.
+        because it is easier to create a new hierarchy and chroot into it.
         First, we still have access to the original mountpoints while doing so,
         and second, we avoid race conditions if someone else changes the existing mountpoints.
 
@@ -623,10 +661,12 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             return path.startswith(target_path)
 
         def find_mode_for_dir(path, fstype):
-            if (path == b"/proc"):
+            if re.match(".*/proc$", path) is not None:
+            #if (path == b"/proc"):
                 # /proc is necessary for the grandchild to read PID, will be replaced later.
                 return DIR_READ_ONLY
-            if _is_below(path, b"/proc"):
+            if re.match(".*/proc/.+$", path) is not None:
+            #if _is_below(path, b"/proc"):
                 # Irrelevant.
                 return None
 
@@ -642,6 +682,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             if result_mode == DIR_OVERLAY and (
                     _is_below(path, b"/dev") or
                     _is_below(path, b"/sys") or
+                    re.match(".*/dev/.+$", path) is not None or
                     fstype == b"cgroup"):
                 # Overlay does not make sense for /dev, /sys, and all cgroups.
                 return DIR_READ_ONLY
@@ -777,8 +818,51 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             os.makedirs(temp_base + temp_dir)
             container.make_bind_mount(temp_base + temp_dir, mount_base + temp_dir)
 
-
         os.chroot(mount_base)
+
+
+    def _setup_reprozip_filesystem(self, target):
+        root_dir = target / b"root"
+        root_dir = str(root_dir.resolve())
+
+        # Create an empty proc folder into the root dir. The mounting will be done later
+        # in the corresponding grandchild-proc.
+        proc_dir = target / b"root/proc"
+        proc_dir.mkdir(parents=True)
+
+        # Bind /dev from host
+        dev_base = target / b"root/dev"
+        dev_base.mkdir(parents=True)
+        dev_base = str(dev_base.resolve())
+
+        container.make_bind_mount(b"/dev/", dev_base, recursive=True, private=True)
+
+        dev_dirs = [b"/dev", b"/dev/pts"]
+        for unused_source, full_mountpoint, fstype, options in list(container.get_mount_points()):
+            if not [s for s in dev_dirs if full_mountpoint in s]:
+                continue
+
+            mountpoint = full_mountpoint or b"/"
+            mount_path = root_dir + mountpoint
+            #print('mount_path: ', mount_path)
+
+            try:
+                container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
+            except OSError as e:
+                if e.errno == errno.EACCES:
+                    logging.warning(
+                        "Cannot mount '%s', directory may be missing from container.",
+                        mountpoint.decode())
+                else:
+                    # If this mountpoint is below an overlay/hidden dir re-create mountpoint.
+                    # Linux does not support making read-only bind mounts in one step:
+                    # https://lwn.net/Articles/281157/ http://man7.org/linux/man-pages/man8/mount.8.html
+                    container.make_bind_mount(
+                        mountpoint, mount_path, recursive=True, private=True)
+                    container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
+
+        os.chroot(root_dir)
+
 
     def _transfer_output_files(self, temp_dir, working_dir, output_dir, patterns):
         """Transfer files created by the tool in the container to the output directory.
