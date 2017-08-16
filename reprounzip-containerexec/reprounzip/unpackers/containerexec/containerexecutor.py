@@ -420,8 +420,12 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         # we need to cd into this directory again, otherwise we would not see the bind mount,
         # but the directory behind it. Thus we always set cwd to force a change of directory.
         cwd = os.path.abspath(cwd or os.curdir)
+        if setup_reprounzip:
+            container_root_dir = cwd
+            cwd = "/"
 
         logging.info('cwd: %s', cwd)
+        logging.debug('args: %s', args)
 
         def grandchild():
             """Setup everything inside the process that finally exec()s the tool."""
@@ -475,7 +479,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                         container.activate_network_interface("lo")
 
                     if setup_reprounzip:
-                        self._setup_reprozip_filesystem(cwd)
+                        self._setup_reprozip_filesystem(container_root_dir)
                     else:
                         #proc_dir = path / b"root/proc"
                         #proc_dir.mkdir(parents=True)
@@ -822,30 +826,31 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         os.makedirs(dev_base, exist_ok=True)
 
         container.make_bind_mount(b"/dev/", dev_base, recursive=True, private=True)
+        container.make_bind_mount(b"/proc/", proc_dir, recursive=True, private=True)
 
         dev_dirs = [b"/dev", b"/dev/pts"]
-        for unused_source, full_mountpoint, fstype, options in list(container.get_mount_points()):
-            if not [s for s in dev_dirs if full_mountpoint in s]:
-                continue
+        #for unused_source, full_mountpoint, fstype, options in list(container.get_mount_points()):
+        #    if not [s for s in dev_dirs if full_mountpoint in s]:
+        #        continue
 
-            mountpoint = full_mountpoint or b"/"
-            mount_path = root_dir + mountpoint
-            #print('mount_path: ', mount_path)
+        #    mountpoint = full_mountpoint or b"/"
+        #    mount_path = root_dir + mountpoint
+        #    #print('mount_path: ', mount_path)
 
-            try:
-                container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
-            except OSError as e:
-                if e.errno == errno.EACCES:
-                    logging.warning(
-                        "Cannot mount '%s', directory may be missing from container.",
-                        mountpoint.decode())
-                else:
-                    # If this mountpoint is below an overlay/hidden dir re-create mountpoint.
-                    # Linux does not support making read-only bind mounts in one step:
-                    # https://lwn.net/Articles/281157/ http://man7.org/linux/man-pages/man8/mount.8.html
-                    container.make_bind_mount(
-                        mountpoint, mount_path, recursive=True, private=True)
-                    container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
+        #    try:
+        #        container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
+        #    except OSError as e:
+        #        if e.errno == errno.EACCES:
+        #            logging.warning(
+        #                "Cannot mount '%s', directory may be missing from container.",
+        #                mountpoint.decode())
+        #        else:
+        #            # If this mountpoint is below an overlay/hidden dir re-create mountpoint.
+        #            # Linux does not support making read-only bind mounts in one step:
+        #            # https://lwn.net/Articles/281157/ http://man7.org/linux/man-pages/man8/mount.8.html
+        #            container.make_bind_mount(
+        #                mountpoint, mount_path, recursive=True, private=True)
+        #            container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
 
         os.chroot(root_dir)
 
