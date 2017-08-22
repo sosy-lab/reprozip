@@ -816,41 +816,27 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
     def _setup_reprozip_filesystem(self, root_dir):
         root_dir = root_dir.encode()
 
-        # Create an empty proc folder into the root dir. The mounting will be done later
-        # in the corresponding grandchild-proc.
-        proc_dir = os.path.join(root_dir, b"proc")
-        os.makedirs(proc_dir, exist_ok=True)
+        # Create an empty proc folder into the root dir. The mounting will be done
+        # in the grandchild-proc later.
+        proc_base = os.path.join(root_dir, b"proc")
+        try:
+            os.makedirs(proc_base)
+            #os.makedirs(proc_base, exist_ok=True)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
 
         # Bind /dev from host
         dev_base = os.path.join(root_dir, b"dev")
-        os.makedirs(dev_base, exist_ok=True)
+        try:
+            os.makedirs(dev_base)
+            #os.makedirs(dev_base, exist_ok=True)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
 
         container.make_bind_mount(b"/dev/", dev_base, recursive=True, private=True)
-        container.make_bind_mount(b"/proc/", proc_dir, recursive=True, private=True)
-
-        dev_dirs = [b"/dev", b"/dev/pts"]
-        #for unused_source, full_mountpoint, fstype, options in list(container.get_mount_points()):
-        #    if not [s for s in dev_dirs if full_mountpoint in s]:
-        #        continue
-
-        #    mountpoint = full_mountpoint or b"/"
-        #    mount_path = root_dir + mountpoint
-        #    #print('mount_path: ', mount_path)
-
-        #    try:
-        #        container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
-        #    except OSError as e:
-        #        if e.errno == errno.EACCES:
-        #            logging.warning(
-        #                "Cannot mount '%s', directory may be missing from container.",
-        #                mountpoint.decode())
-        #        else:
-        #            # If this mountpoint is below an overlay/hidden dir re-create mountpoint.
-        #            # Linux does not support making read-only bind mounts in one step:
-        #            # https://lwn.net/Articles/281157/ http://man7.org/linux/man-pages/man8/mount.8.html
-        #            container.make_bind_mount(
-        #                mountpoint, mount_path, recursive=True, private=True)
-        #            container.remount_with_additional_flags(mount_path, options, libc.MS_RDONLY)
+        container.make_bind_mount(b"/proc/", proc_base, recursive=True, private=True)
 
         os.chroot(root_dir)
 

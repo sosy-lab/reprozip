@@ -44,7 +44,7 @@ def containerexec_run(args):
     if args is None:
         args = sys.args
 
-    #logging.info('Received arguments: %s', args)
+    logging.info('Received arguments: %s', args)
 
     target = Path(args.target[0])
     unpacked_info = metadata_read(target, 'chroot')
@@ -56,10 +56,6 @@ def containerexec_run(args):
 
     selected_runs = get_runs(runs, args.run, cmdline)
 
-    # X11 handler
-    x11 = X11Handler(args.x11, ('local', socket.gethostname()),
-                     args.x11_display)
-
     cmds = []
     uid = 0
     gid = 0
@@ -69,8 +65,7 @@ def containerexec_run(args):
         #workingDir = shell_escape(run['workingdir'])
         cmd = 'cd %s && ' % shell_escape(run['workingdir'])
         cmd += '/usr/bin/env -i '
-        environ = x11.fix_env(run['environ'])
-        environ = fixup_environment(environ, args)
+        environ = fixup_environment(run['environ'], args)
         cmd += ' '.join('%s=%s' % (shell_escape(k), shell_escape(v))
                         for k, v in iteritems(environ))
         cmd += ' '
@@ -84,15 +79,9 @@ def containerexec_run(args):
         cmd += ' '.join(shell_escape(a) for a in argv)
         cmd = '/bin/sh -c %s' % (shell_escape(cmd))
         cmds.append(cmd)
-    cmds = ['/bin/sh -c %s' % (shell_escape(c))
-            for c in x11.init_cmds] + cmds
     cmds = ' && '.join(cmds)
 
-    # Starts forwarding
-#    forwarders = []
-#    for portnum, connector in x11.port_forward:
-#        fwd = LocalForwarder(connector, portnum)
-#        forwarders.append(fwd)
+    logging.info('Executed cmd: %s', cmd)
 
     executor = containerexecutor.ContainerExecutor(uid=uid, gid=gid)
 
@@ -196,14 +185,6 @@ def setup(parser, **kwargs):
     parser_run.add_argument('run', default=None, nargs=argparse.OPTIONAL)
     parser_run.add_argument('--cmdline', nargs=argparse.REMAINDER,
                             help="Command line to run")
-    parser_run.add_argument('--enable-x11', action='store_true', default=False,
-                            dest='x11',
-                            help="Enable X11 support (needs an X server on "
-                                 "the host)")
-    parser_run.add_argument('--x11-display', dest='x11_display',
-                            help="Display number to use on the experiment "
-                                 "side (change the host display with the "
-                                 "DISPLAY environment variable)")
     add_environment_options(parser_run)
     parser_run.set_defaults(func=containerexec_run)
 
