@@ -290,7 +290,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
     # --- run execution ---
 
     def execute_run(self, args, rootDir=None, workingDir=None, output_dir=None,
-                    result_files_patterns=[]):
+                    environ=os.environ.copy(), result_files_patterns=[]):
         """
         This method executes the command line and waits for the termination of it,
         handling all setup and cleanup.
@@ -312,7 +312,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         try:
             pid, result_fn = self._start_execution(args=args,
                 stdin=None, stdout=None, stderr=None,
-                env=os.environ.copy(), root_dir=rootDir, cwd=workingDir, temp_dir=temp_dir,
+                env=environ, root_dir=rootDir, cwd=workingDir, temp_dir=temp_dir,
                 cgroups=Cgroup({}),
                 output_dir=output_dir, result_files_patterns=result_files_patterns,
                 child_setup_fn=lambda: None,
@@ -335,11 +335,11 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                 logging.debug('Cleaning up temporary directory.')
                 util.rmtree(temp_dir, onerror=util.log_rmtree_error)
             else:
-                logging.info('Removing proc and dev folder in root dir')
-                workingDir = os.path.abspath(workingDir)
+                logging.info('Removing proc and dev folders in the root dir')
+                rootDir = os.path.abspath(rootDir)
                 dirs = [b"proc", b"dev"]
                 for dir in dirs:
-                    dir = os.path.join(workingDir, dir)
+                    dir = os.path.join(rootDir, dir)
                     if os.path.exists(dir):
                         util.rmtree(dir, onerror=util.log_rmtree_error)
 
@@ -416,13 +416,14 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         # If the current directory is within one of the bind mounts we create,
         # we need to cd into this directory again, otherwise we would not see the bind mount,
         # but the directory behind it. Thus we always set cwd to force a change of directory.
-        cwd = os.path.abspath(cwd or os.curdir)
-        if root_dir is not None:
-            container_root_dir = cwd
-            cwd = "/"
+        if root_dir is None:
+            cwd = os.path.abspath(cwd or os.curdir)
+        else:
+            root_dir = os.path.abspath(root_dir)
+            cwd = os.path.abspath(cwd)
 
         logging.info('cwd: %s', cwd)
-        logging.debug('args: %s', args)
+        logging.info('executing cmd: %s', args)
 
         def grandchild():
             """Setup everything inside the process that finally exec()s the tool."""
@@ -475,12 +476,10 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                     if not self._allow_network:
                         container.activate_network_interface("lo")
 
-                    if root_dir is not None:
-                        self._setup_root_filesystem(container_root_dir)
-                    else:
-                        #proc_dir = path / b"root/proc"
-                        #proc_dir.mkdir(parents=True)
+                    if root_dir is None:
                         self._setup_container_filesystem(temp_dir)
+                    else:
+                        self._setup_root_filesystem(root_dir)
                 except EnvironmentError as e:
                     logging.critical("Failed to configure container: %s", e)
                     return CHILD_OSERROR
@@ -498,8 +497,8 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                                         stdout=stdout, stderr=stderr,
                                         env=env,
                                         close_fds=False,
-                                        preexec_fn=grandchild,
-                                        shell=True)
+                                        preexec_fn=grandchild)
+                                        #shell=True)
                 except (EnvironmentError, RuntimeError) as e:
                     logging.critical("Cannot start process: %s", e)
                     return CHILD_OSERROR

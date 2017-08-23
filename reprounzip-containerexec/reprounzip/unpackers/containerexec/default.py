@@ -54,58 +54,48 @@ def containerexec_run(args):
 
     selected_runs = get_runs(runs, args.run, cmdline)
 
-    cmds = []
-    uid = 0
-    gid = 0
+    signals.pre_run(target=target)
+
     for run_number in selected_runs:
         run = runs[run_number]
-        #cmd = 'cd %s; ' % (shell_escape(run['workingdir']))
-        #workingDir = shell_escape(run['workingdir'])
-        cmd = 'cd %s && ' % shell_escape(run['workingdir'])
-        cmd += '/usr/bin/env -i '
+
+        workingDir = shell_escape(run['workingdir'])
+
         environ = fixup_environment(run['environ'], args)
-        cmd += ' '.join('%s=%s' % (shell_escape(k), shell_escape(v))
-                        for k, v in iteritems(environ))
-        cmd += ' '
+
         uid = run['uid']
         gid = run['gid']
+
         # FIXME : Use exec -a or something if binary != argv[0]
         if cmdline is None:
             argv = [run['binary']] + run['argv'][1:]
         else:
             argv = cmdline
-        cmd += ' '.join(shell_escape(a) for a in argv)
-        cmd = '/bin/sh -c %s' % (shell_escape(cmd))
-        cmds.append(cmd)
-    cmds = ' && '.join(cmds)
 
-    logging.info('Executed cmd: %s', cmds)
+        executor = containerexecutor.ContainerExecutor(uid=uid, gid=gid)
 
-    executor = containerexecutor.ContainerExecutor(uid=uid, gid=gid)
+        # ensure that process gets killed on interrupt/kill signal
+        def signal_handler_kill(signum, frame):
+            executor.stop()
+        signal.signal(signal.SIGTERM, signal_handler_kill)
+        signal.signal(signal.SIGINT,  signal_handler_kill)
 
-    # ensure that process gets killed on interrupt/kill signal
-    def signal_handler_kill(signum, frame):
-        executor.stop()
-    signal.signal(signal.SIGTERM, signal_handler_kill)
-    signal.signal(signal.SIGINT,  signal_handler_kill)
+        # actual run execution
+        try:
+            result = executor.execute_run(argv, workingDir=workingDir,
+                                          environ=environ, rootDir=str(target / "root"))
+        except (BenchExecException, OSError) as e:
+            sys.exit("Cannot execute process: {0}.".format(e))
+            # sys.exit("Cannot execute {0}: {1}.".format(containerexec_util.escape_string_shell(args[0]), e))
 
-    # actual run execution
-    try:
-        signals.pre_run(target=target)
-        result = executor.execute_run(cmds, workingDir=str(target / "root"),
-                                      rootDir='temp_str') #TODO
-        stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
-        signals.post_run(target=target, retcode=result.value)
+    stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
+    signals.post_run(target=target, retcode=result.value)
 
-        # Update input file status
-        metadata_update_run(config, unpacked_info, selected_runs)
-        metadata_write(target, unpacked_info, 'chroot')
+    # Update input file status
+    metadata_update_run(config, unpacked_info, selected_runs)
+    metadata_write(target, unpacked_info, 'chroot')
 
-    except (BenchExecException, OSError) as e:
-        sys.exit("Cannot execute process: {0}.".format(e))
-        # sys.exit("Cannot execute {0}: {1}.".format(containerexec_util.escape_string_shell(args[0]), e))
-
-    return result.signal or result.value
+    #return result.signal or result.value
 
 
 @target_must_exist
