@@ -20,13 +20,12 @@ from reprounzip.common import load_config as load_config_file
 from reprounzip.unpackers.common import target_must_exist, shell_escape, \
     get_runs, add_environment_options, fixup_environment, metadata_read, \
     metadata_write, metadata_update_run
-from reprounzip.unpackers.common.x11 import X11Handler, LocalForwarder
 from reprounzip.unpackers.default import chroot_create, chroot_destroy_dir, \
     test_linux_same_arch
-from reprounzip.unpackers.containerexec import baseexecutor, BenchExecException, \
+from reprounzip.unpackers.containerexec import BenchExecException, \
     containerexecutor
-from reprounzip.unpackers.containerexec import util as containerexec_util
-from reprounzip.utils import unicode_, iteritems, stderr
+from reprounzip.unpackers.containerexec import util
+from reprounzip.utils import stderr
 
 @target_must_exist
 def containerexec_upload(args):
@@ -54,14 +53,17 @@ def containerexec_run(args):
 
     selected_runs = get_runs(runs, args.run, cmdline)
 
+    root_dir = target / b"root"
+    root_dir = str(root_dir.resolve())
+
     signals.pre_run(target=target)
 
     for run_number in selected_runs:
         run = runs[run_number]
 
-        workingDir = shell_escape(run['workingdir'])
+        working_dir = shell_escape(run['workingdir'])
 
-        environ = fixup_environment(run['environ'], args)
+        env = fixup_environment(run['environ'], args)
 
         uid = run['uid']
         gid = run['gid']
@@ -82,11 +84,11 @@ def containerexec_run(args):
 
         # actual run execution
         try:
-            result = executor.execute_run(argv, workingDir=workingDir,
-                                          environ=environ, rootDir=str(target / "root"))
+            result = executor.execute_run(argv, workingDir=working_dir,
+                                          environ=env, rootDir=root_dir)
         except (BenchExecException, OSError) as e:
-            sys.exit("Cannot execute process: {0}.".format(e))
-            # sys.exit("Cannot execute {0}: {1}.".format(containerexec_util.escape_string_shell(args[0]), e))
+            #sys.exit("Cannot execute process: {0}.".format(e))
+            sys.exit("Cannot execute {0}: {1}.".format(util.escape_string_shell(args[0]), e))
 
     stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
     signals.post_run(target=target, retcode=result.value)
@@ -94,8 +96,6 @@ def containerexec_run(args):
     # Update input file status
     metadata_update_run(config, unpacked_info, selected_runs)
     metadata_write(target, unpacked_info, 'chroot')
-
-    #return result.signal or result.value
 
 
 @target_must_exist

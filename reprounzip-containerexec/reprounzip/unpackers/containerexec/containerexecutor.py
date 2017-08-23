@@ -26,7 +26,6 @@ import errno
 import logging
 import os
 import collections
-import re
 import shutil
 try:
     import cPickle as pickle
@@ -300,7 +299,6 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         @param result_files_patterns: a list of patterns of files to retrieve as result files
         """
         # preparations
-        temp_dir = ''
         if rootDir is None:
             temp_dir = tempfile.mkdtemp(prefix="Benchexec_run_")
 
@@ -335,7 +333,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                 logging.debug('Cleaning up temporary directory.')
                 util.rmtree(temp_dir, onerror=util.log_rmtree_error)
             else:
-                logging.info('Removing proc and dev folders in the root dir')
+                logging.info('Removing proc and dev folders in root dir')
                 rootDir = os.path.abspath(rootDir)
                 dirs = [b"proc", b"dev"]
                 for dir in dirs:
@@ -422,9 +420,6 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             root_dir = os.path.abspath(root_dir)
             cwd = os.path.abspath(cwd)
 
-        logging.info('cwd: %s', cwd)
-        logging.info('executing cmd: %s', args)
-
         def grandchild():
             """Setup everything inside the process that finally exec()s the tool."""
             try:
@@ -476,10 +471,10 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                     if not self._allow_network:
                         container.activate_network_interface("lo")
 
-                    if root_dir is None:
-                        self._setup_container_filesystem(temp_dir)
-                    else:
+                    if root_dir is not None:
                         self._setup_root_filesystem(root_dir)
+                    else:
+                        self._setup_container_filesystem(temp_dir)
                 except EnvironmentError as e:
                     logging.critical("Failed to configure container: %s", e)
                     return CHILD_OSERROR
@@ -498,7 +493,6 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                                         env=env,
                                         close_fds=False,
                                         preexec_fn=grandchild)
-                                        #shell=True)
                 except (EnvironmentError, RuntimeError) as e:
                     logging.critical("Cannot start process: %s", e)
                     return CHILD_OSERROR
@@ -649,12 +643,10 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             return path.startswith(target_path)
 
         def find_mode_for_dir(path, fstype):
-            if re.match(".*/proc$", path) is not None:
-            #if (path == b"/proc"):
+            if (path == b"/proc"):
                 # /proc is necessary for the grandchild to read PID, will be replaced later.
                 return DIR_READ_ONLY
-            if re.match(".*/proc/.+$", path) is not None:
-            #if _is_below(path, b"/proc"):
+            if _is_below(path, b"/proc"):
                 # Irrelevant.
                 return None
 
@@ -670,7 +662,6 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             if result_mode == DIR_OVERLAY and (
                     _is_below(path, b"/dev") or
                     _is_below(path, b"/sys") or
-                    re.match(".*/dev/.+$", path) is not None or
                     fstype == b"cgroup"):
                 # Overlay does not make sense for /dev, /sys, and all cgroups.
                 return DIR_READ_ONLY
@@ -720,7 +711,14 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             try:
                 container.make_bind_mount(mount_path, mount_path)
             except OSError as e:
-                logging.debug("Failed to make %s a bind mount: %s", mount_path, e)
+                # on btrfs, non-recursive bind mounts faitl
+                if e.errno == errno.EINVAL:
+                    try:
+                        container.make_bind_mount(mount_path, mount_path, recursive=True)
+                    except OSError as e2:
+                        logging.debug("Failed to make %s a (recursive) bind mount: %s", mount_path, e2)
+                else:
+                    logging.debug("Failed to make %s a bind mount: %s", mount_path, e)
             if not os.path.exists(temp_path):
                 os.makedirs(temp_path)
 
