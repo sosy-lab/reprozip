@@ -28,8 +28,6 @@ from reprounzip.unpackers.containerexec import baseexecutor, BenchExecException,
 from reprounzip.unpackers.containerexec import util as containerexec_util
 from reprounzip.utils import unicode_, iteritems, stderr
 
-CONFIGURE_REPROUNZIP_CONTAINER = True
-
 @target_must_exist
 def containerexec_upload(args):
     """Replaces an input file in the sandbox.
@@ -81,7 +79,7 @@ def containerexec_run(args):
         cmds.append(cmd)
     cmds = ' && '.join(cmds)
 
-    logging.info('Executed cmd: %s', cmd)
+    logging.info('Executed cmd: %s', cmds)
 
     executor = containerexecutor.ContainerExecutor(uid=uid, gid=gid)
 
@@ -95,7 +93,7 @@ def containerexec_run(args):
     try:
         signals.pre_run(target=target)
         result = executor.execute_run(cmds, workingDir=str(target / "root"),
-                                      setup_reprounzip=CONFIGURE_REPROUNZIP_CONTAINER)
+                                      rootDir='temp_str') #TODO
         stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
         signals.post_run(target=target, retcode=result.value)
 

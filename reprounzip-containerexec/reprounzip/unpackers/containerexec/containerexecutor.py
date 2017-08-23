@@ -27,7 +27,6 @@ import logging
 import os
 import collections
 import re
-from rpaths import Path
 import shutil
 try:
     import cPickle as pickle
@@ -40,7 +39,6 @@ import sys
 import tempfile
 sys.dont_write_bytecode = True # prevent creation of .pyc files
 
-from reprounzip.unpackers.common import shell_escape
 from reprounzip.unpackers.containerexec import baseexecutor, \
     BenchExecException, container, libc, util
 from reprounzip.unpackers.containerexec.cgroups import Cgroup
@@ -291,8 +289,8 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
 
     # --- run execution ---
 
-    def execute_run(self, args, workingDir=None, output_dir=None, result_files_patterns=[],
-                    setup_reprounzip=False):
+    def execute_run(self, args, rootDir=None, workingDir=None, output_dir=None,
+                    result_files_patterns=[]):
         """
         This method executes the command line and waits for the termination of it,
         handling all setup and cleanup.
@@ -303,7 +301,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         """
         # preparations
         temp_dir = ''
-        if not setup_reprounzip:
+        if rootDir is None:
             temp_dir = tempfile.mkdtemp(prefix="Benchexec_run_")
 
         pid = None
@@ -314,10 +312,9 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         try:
             pid, result_fn = self._start_execution(args=args,
                 stdin=None, stdout=None, stderr=None,
-                env=os.environ.copy(), cwd=workingDir, path=None, temp_dir=temp_dir,
+                env=os.environ.copy(), root_dir=rootDir, cwd=workingDir, temp_dir=temp_dir,
                 cgroups=Cgroup({}),
                 output_dir=output_dir, result_files_patterns=result_files_patterns,
-                setup_reprounzip=setup_reprounzip,
                 child_setup_fn=lambda: None,
                 parent_setup_fn=lambda: None,
                 parent_cleanup_fn=id)
@@ -334,22 +331,22 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
             with self.SUB_PROCESS_PIDS_LOCK:
                 self.SUB_PROCESS_PIDS.discard(pid)
 
-            if not setup_reprounzip:
+            if rootDir is None:
                 logging.debug('Cleaning up temporary directory.')
                 util.rmtree(temp_dir, onerror=util.log_rmtree_error)
-
-            if setup_reprounzip and type(workingDir) is Path:
-                dirs = [b"root/proc", b"root/dev"]
+            else:
+                logging.info('Removing proc and dev folder in root dir')
+                workingDir = os.path.abspath(workingDir)
+                dirs = [b"proc", b"dev"]
                 for dir in dirs:
-                    dir = workingDir / dir
-                    if dir.exists():
-                        logging.info('removing dir: %s', dir)
-                        util.rmtree(str(dir.resolve()), onerror=util.log_rmtree_error)
+                    dir = os.path.join(workingDir, dir)
+                    if os.path.exists(dir):
+                        util.rmtree(dir, onerror=util.log_rmtree_error)
 
         # cleanup steps that are only relevant in case of success
         return util.ProcessExitCode.from_raw(returnvalue)
 
-    def _start_execution(self, output_dir=None, result_files_patterns=[], setup_reprounzip=False,
+    def _start_execution(self, root_dir=None, output_dir=None, result_files_patterns=[],
                          *args, **kwargs):
         if not self._use_namespaces:
             return super(ContainerExecutor, self)._start_execution(*args, **kwargs)
@@ -368,16 +365,16 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                                          .format(pattern))
 
             return self._start_execution_in_container(
-                output_dir=output_dir, result_files_patterns=result_files_patterns,
-                setup_reprounzip=setup_reprounzip, *args, **kwargs)
+                root_dir=root_dir, output_dir=output_dir,
+                result_files_patterns=result_files_patterns, *args, **kwargs)
 
 
     # --- container implementation with namespaces ---
 
     def _start_execution_in_container(
-            self, args, stdin, stdout, stderr, env, cwd, path, temp_dir, cgroups,
-            output_dir, result_files_patterns, setup_reprounzip,
-            parent_setup_fn, child_setup_fn, parent_cleanup_fn):
+            self, args, stdin, stdout, stderr, env, root_dir, cwd, temp_dir,
+            cgroups, output_dir, result_files_patterns, parent_setup_fn,
+            child_setup_fn, parent_cleanup_fn):
         """Execute the given command and measure its resource usage similarly to super()._start_execution(),
         but inside a container implemented using Linux namespaces.
         The command has no network access (only loopback),
@@ -420,7 +417,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         # we need to cd into this directory again, otherwise we would not see the bind mount,
         # but the directory behind it. Thus we always set cwd to force a change of directory.
         cwd = os.path.abspath(cwd or os.curdir)
-        if setup_reprounzip:
+        if root_dir is not None:
             container_root_dir = cwd
             cwd = "/"
 
@@ -478,8 +475,8 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
                     if not self._allow_network:
                         container.activate_network_interface("lo")
 
-                    if setup_reprounzip:
-                        self._setup_reprozip_filesystem(container_root_dir)
+                    if root_dir is not None:
+                        self._setup_root_filesystem(container_root_dir)
                     else:
                         #proc_dir = path / b"root/proc"
                         #proc_dir.mkdir(parents=True)
@@ -813,7 +810,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         os.chroot(mount_base)
 
 
-    def _setup_reprozip_filesystem(self, root_dir):
+    def _setup_root_filesystem(self, root_dir):
         root_dir = root_dir.encode()
 
         # Create an empty proc folder into the root dir. The mounting will be done
