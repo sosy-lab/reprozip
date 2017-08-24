@@ -12,7 +12,8 @@ with io.open('README.rst', encoding='utf-8') as fp:
     description = fp.read()
 req = [
     'reprounzip>=1.0.8',
-    'rpaths>=0.8']
+    'rpaths>=0.8',
+    'benchexec>=1.10']
 setup(name='reprounzip-containerexec',
       version='0.1',
       packages=['reprounzip', 'reprounzip.unpackers',
@@ -31,7 +32,8 @@ setup(name='reprounzip-containerexec',
       long_description=description,
       license='BSD-3-Clause',
       keywords=['reprozip', 'reprounzip', 'reproducibility', 'provenance',
-                'vida', 'nyu', 'containerexec, container, sandbox'],
+                'vida', 'nyu', 'benchexec', 'containerexec', 'container',
+                'sandbox'],
       classifiers=[
           'Development Status :: 5 - Production/Stable',
           'Intended Audience :: Science/Research',

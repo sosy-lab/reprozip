@@ -1,4 +1,0 @@
-<table>
-  <result filename="results/test.*.results.predicateAnalysis.xml"/>
-  <result filename="results/test.*.results.valueAnalysis.xml"/>
-</table>

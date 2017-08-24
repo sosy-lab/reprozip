@@ -13,16 +13,14 @@ import signal
 from rpaths import Path
 import sys
 
+from benchexec import BenchExecException, containerexecutor
 from reprounzip import signals
 from reprounzip.common import load_config as load_config_file
 from reprounzip.unpackers.common import target_must_exist, shell_escape, \
     get_runs, add_environment_options, fixup_environment, metadata_read, \
     metadata_write, metadata_initial_iofiles, metadata_update_run
-from reprounzip.unpackers.default import chroot_create, \
-    download, test_linux_same_arch, upload
-from reprounzip.unpackers.containerexec import BenchExecException, \
-    containerexecutor
-from reprounzip.unpackers.containerexec import util
+from reprounzip.unpackers.default import chroot_create, download, \
+    test_linux_same_arch, upload
 from reprounzip.utils import stderr, rmtree_fixed
 
 TYPE_ = 'containerexec'
