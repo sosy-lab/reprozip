@@ -19,7 +19,7 @@ from reprounzip.unpackers.common import target_must_exist, shell_escape, \
     get_runs, add_environment_options, fixup_environment, metadata_read, \
     metadata_write, metadata_initial_iofiles, metadata_update_run
 from reprounzip.unpackers.default import chroot_create, \
-    test_linux_same_arch, upload
+    download, test_linux_same_arch, upload
 from reprounzip.unpackers.containerexec import BenchExecException, \
     containerexecutor
 from reprounzip.unpackers.containerexec import util
@@ -91,8 +91,8 @@ def containerexec_run(args):
             result = executor.execute_run(argv, workingDir=working_dir,
                                           environ=env, rootDir=root_dir)
         except (BenchExecException, OSError) as e:
-            #sys.exit("Cannot execute process: {0}.".format(e))
-            sys.exit("Cannot execute {0}: {1}.".format(util.escape_string_shell(args[0]), e))
+            sys.exit("Cannot execute process: {0}.".format(e))
+            #sys.exit("Cannot execute {0}: {1}.".format(util.escape_string_shell(args[0]), e))
 
     stderr.write("\n*** Command finished, status: %d\n" % result.value or result.signal)
     signals.post_run(target=target, retcode=result.value)
@@ -112,13 +112,6 @@ def containerexec_destroy(args):
     signals.pre_destroy(target=target)
     rmtree_fixed(target)
     signals.post_destroy(target=target)
-
-
-@target_must_exist
-def containerexec_download(args):
-    """Gets an output file out of the sandbox.
-    """
-    logging.info('containerexec_download')
 
 
 def setup(parser, **kwargs):
@@ -187,7 +180,7 @@ def setup(parser, **kwargs):
     parser_download.add_argument('--all', action='store_true',
                                  help="Download all output files to the "
                                       "current directory")
-    parser_download.set_defaults(func=containerexec_download, type=TYPE_)
+    parser_download.set_defaults(func=download, type=TYPE_)
 
     # destroy
     parser_destroy = subparsers.add_parser('destroy')
