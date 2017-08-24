@@ -299,6 +299,7 @@ class ContainerExecutor(baseexecutor.BaseExecutor):
         @param result_files_patterns: a list of patterns of files to retrieve as result files
         """
         # preparations
+        temp_dir = ''
         if rootDir is None:
             temp_dir = tempfile.mkdtemp(prefix="Benchexec_run_")
 

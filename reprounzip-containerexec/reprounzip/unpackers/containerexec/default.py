@@ -9,9 +9,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import argparse
 import logging
-import os
 import signal
-import socket
 from rpaths import Path
 import sys
 
@@ -19,19 +17,25 @@ from reprounzip import signals
 from reprounzip.common import load_config as load_config_file
 from reprounzip.unpackers.common import target_must_exist, shell_escape, \
     get_runs, add_environment_options, fixup_environment, metadata_read, \
-    metadata_write, metadata_update_run
-from reprounzip.unpackers.default import chroot_create, chroot_destroy_dir, \
-    test_linux_same_arch
+    metadata_write, metadata_initial_iofiles, metadata_update_run
+from reprounzip.unpackers.default import chroot_create, \
+    test_linux_same_arch, upload
 from reprounzip.unpackers.containerexec import BenchExecException, \
     containerexecutor
 from reprounzip.unpackers.containerexec import util
-from reprounzip.utils import stderr
+from reprounzip.utils import stderr, rmtree_fixed
 
-@target_must_exist
-def containerexec_upload(args):
-    """Replaces an input file in the sandbox.
-    """
-    logging.info('containerexec_upload')
+TYPE_ = 'containerexec'
+
+
+def containerexec_create(args):
+    chroot_create(args)
+
+    # Rewrite the meta-data for reprounzip with a containerexec-specific name
+    # of the unpacker
+    target = Path(args.target[0])
+    config = load_config_file(target / 'config.yml', True)
+    metadata_write(target, metadata_initial_iofiles(config), TYPE_)
 
 
 @target_must_exist
@@ -44,7 +48,7 @@ def containerexec_run(args):
     logging.info('Received arguments: %s', args)
 
     target = Path(args.target[0])
-    unpacked_info = metadata_read(target, 'chroot')
+    unpacked_info = metadata_read(target, TYPE_)
     cmdline = args.cmdline
 
     # Loads config
@@ -95,7 +99,19 @@ def containerexec_run(args):
 
     # Update input file status
     metadata_update_run(config, unpacked_info, selected_runs)
-    metadata_write(target, unpacked_info, 'chroot')
+    metadata_write(target, unpacked_info, TYPE_)
+
+
+@target_must_exist
+def containerexec_destroy(args):
+    """Destroys the directory.
+    """
+    target = Path(args.target[0])
+
+    logging.info("Removing directory %s...", target)
+    signals.pre_destroy(target=target)
+    rmtree_fixed(target)
+    signals.post_destroy(target=target)
 
 
 @target_must_exist
@@ -140,32 +156,19 @@ def setup(parser, **kwargs):
     def add_opt_general(opts):
         opts.add_argument('target', nargs=1, help="Experiment directory")
 
-    # setup/create
-    def add_opt_setup(opts):
-        opts.add_argument('pack', nargs=1, help="Pack to extract")
-
-    def add_opt_owner(opts):
-        opts.add_argument('--preserve-owner', action='store_true',
-                          dest='restore_owner', default=None,
-                          help="Restore files' owner/group when extracting")
-        opts.add_argument('--dont-preserve-owner', action='store_false',
-                          dest='restore_owner', default=None,
-                          help="Don't restore files' owner/group when "
-                               "extracting, use current users")
-
     # setup
     parser_setup = subparsers.add_parser('setup')
-    add_opt_setup(parser_setup)
+    parser_setup.add_argument('pack', nargs=1, help="Pack to extract")
     add_opt_general(parser_setup)
-    add_opt_owner(parser_setup)
-    parser_setup.set_defaults(func=chroot_create)
+    parser_setup.set_defaults(func=containerexec_create, restore_owner=False)
 
     # upload
     parser_upload = subparsers.add_parser('upload')
     add_opt_general(parser_upload)
     parser_upload.add_argument('file', nargs=argparse.ZERO_OR_MORE,
                                help="<path>:<input_file_name")
-    parser_upload.set_defaults(func=containerexec_upload)
+    parser_upload.set_defaults(func=upload, type=TYPE_,
+                               restore_owner=False)
 
     # run
     parser_run = subparsers.add_parser('run')
@@ -184,11 +187,11 @@ def setup(parser, **kwargs):
     parser_download.add_argument('--all', action='store_true',
                                  help="Download all output files to the "
                                       "current directory")
-    parser_download.set_defaults(func=containerexec_download)
+    parser_download.set_defaults(func=containerexec_download, type=TYPE_)
 
     # destroy
     parser_destroy = subparsers.add_parser('destroy')
     add_opt_general(parser_destroy)
-    parser_destroy.set_defaults(func=chroot_destroy_dir)
+    parser_destroy.set_defaults(func=containerexec_destroy)
 
     return {'test_compatibility': test_linux_same_arch}
