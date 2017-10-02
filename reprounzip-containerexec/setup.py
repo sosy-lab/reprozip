@@ -15,8 +15,9 @@ setuptools.setup(
     long_description = long_description,
     url = 'https://www.reprozip.org',
     license = 'BSD-3-Clause',
-    keywords = ['reprozip', 'reprounzip', 'reproducibility', 'provenance',
-            'vida', 'nyu', 'benchexec', 'containerexec', 'container'],
+    keywords = [
+        'reprozip', 'reprounzip', 'reproducibility', 'provenance',
+        'benchexec', 'containerexec', 'container'],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Science/Research',
